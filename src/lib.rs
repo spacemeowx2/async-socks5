@@ -6,13 +6,21 @@
 
 use async_trait::async_trait;
 use std::{
-    io::Cursor,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     string::FromUtf8Error,
 };
+#[cfg(feature = "tokio")]
+use std::io::Cursor;
+#[cfg(feature = "tokio")]
 use tokio::{
     io,
     io::{AsyncReadExt, AsyncWriteExt},
+    net::UdpSocket,
+};
+#[cfg(feature = "async-std")]
+use async_std::{
+    io,
+    io::{Cursor, ReadExt as AsyncReadExt, prelude::WriteExt as AsyncWriteExt },
     net::UdpSocket,
 };
 
@@ -79,6 +87,29 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[async_trait]
 trait ReadExt: AsyncReadExt + Unpin {
+    #[cfg(feature = "async-std")]
+    async fn read_u8(&mut self) -> io::Result<u8> {
+        let mut buf = [0u8; 1];
+        let size = self.read(&mut buf[..]).await?;
+        match size {
+            0 => Err(io::ErrorKind::UnexpectedEof.into()),
+            1 => Ok(buf[0]),
+            _ => unreachable!(),
+        }
+    }
+    #[cfg(feature = "async-std")]
+    async fn read_u16(&mut self) -> io::Result<u16> {
+        let mut buf = [0u8; 2];
+        let mut read = 0;
+        while read != 2 {
+            let size = self.read(&mut buf[read..]).await?;
+            if size == 0 {
+                return Err(io::ErrorKind::UnexpectedEof.into())
+            }
+            read += size;
+        }
+        Ok((buf[0] as u16) << 8 | (buf[1] as u16))
+    }
     async fn read_version(&mut self) -> Result<()> {
         let value = self.read_u8().await?;
 
@@ -244,6 +275,29 @@ impl<T: AsyncReadExt + Unpin> ReadExt for T {}
 
 #[async_trait]
 trait WriteExt: AsyncWriteExt + Unpin {
+    #[cfg(feature = "async-std")]
+    async fn write_u8(&mut self, n: u8) -> io::Result<()> {
+        let size = self.write(&[n]).await?;
+        match size {
+            0 => Err(io::ErrorKind::WriteZero.into()),
+            1 => Ok(()),
+            _ => unreachable!(),
+        }
+    }
+    #[cfg(feature = "async-std")]
+    async fn write_u16(&mut self, n: u16) -> io::Result<()> {
+        let buf = [(n >> 8) as u8, n as u8];
+        let mut written = 0;
+        while written != 2 {
+            let size = self.write(&buf[written..]).await?;
+            if size == 0 {
+                return Err(io::ErrorKind::WriteZero.into())
+            }
+            written += size;
+        }
+        Ok(())
+    }
+
     async fn write_version(&mut self) -> Result<()> {
         self.write_u8(0x05).await?;
         Ok(())
@@ -724,7 +778,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::{io::BufStream, net::TcpStream};
+    #[cfg(feature = "tokio")]
+    use tokio::net::TcpStream;
+    #[cfg(feature = "async-std")]
+    use async_std::net::TcpStream;
 
     const PROXY_ADDR: &str = "127.0.0.1:1080";
     const PROXY_AUTH_ADDR: &str = "127.0.0.1:1081";
@@ -732,7 +789,7 @@ mod tests {
 
     async fn connect(addr: &str, auth: Option<Auth>) {
         let socket = TcpStream::connect(addr).await.unwrap();
-        let mut socket = BufStream::new(socket);
+        let mut socket = socket;
         super::connect(
             &mut socket,
             AddrKind::Domain("google.com".to_string(), 80),
@@ -763,7 +820,6 @@ mod tests {
         let server_addr = AddrKind::Domain("127.0.0.1".to_string(), 80);
 
         let client = TcpStream::connect(PROXY_ADDR).await.unwrap();
-        let client = BufStream::new(client);
         let client = SocksListener::bind(client, server_addr, None)
             .await
             .unwrap();
@@ -783,7 +839,6 @@ mod tests {
     #[tokio::test]
     async fn udp_associate() {
         let proxy = TcpStream::connect(PROXY_ADDR).await.unwrap();
-        let proxy = BufStream::new(proxy);
         let client = UdpSocket::bind("127.0.0.1:2345").await.unwrap();
         let mut client = SocksDatagram::associate(proxy, client, None, None::<SocketAddr>)
             .await

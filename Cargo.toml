@@ -16,9 +16,13 @@ edition = "2018"
 github-actions = { repository = "https://github.com/ark0f/async-socks5", workflow = "CI" }
 
 [dependencies]
-tokio = { version = "0.2.3", features = ["udp", "dns", "io-util"] }
+tokio = { version = "0.2.3", features = ["udp", "dns", "io-util"], optional = true }
+async-std = { version = "1.6.2", optional = true }
 thiserror = "1.0.0"
 async-trait = "0.1.8"
 
 [dev-dependencies]
 tokio = { version = "0.2.3", features = ["udp", "dns", "io-util", "tcp", "macros"] }
+
+[features]
+default = [ "tokio" ]

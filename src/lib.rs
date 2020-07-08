@@ -4,23 +4,23 @@
 
 #![deny(missing_debug_implementations)]
 
+#[cfg(feature = "async-std")]
+use async_std::{
+    io,
+    io::{prelude::WriteExt as AsyncWriteExt, Cursor, ReadExt as AsyncReadExt},
+    net::UdpSocket,
+};
 use async_trait::async_trait;
+#[cfg(feature = "tokio")]
+use std::io::Cursor;
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     string::FromUtf8Error,
 };
 #[cfg(feature = "tokio")]
-use std::io::Cursor;
-#[cfg(feature = "tokio")]
 use tokio::{
     io,
     io::{AsyncReadExt, AsyncWriteExt},
-    net::UdpSocket,
-};
-#[cfg(feature = "async-std")]
-use async_std::{
-    io,
-    io::{Cursor, ReadExt as AsyncReadExt, prelude::WriteExt as AsyncWriteExt },
     net::UdpSocket,
 };
 
@@ -104,7 +104,7 @@ trait ReadExt: AsyncReadExt + Unpin {
         while read != 2 {
             let size = self.read(&mut buf[read..]).await?;
             if size == 0 {
-                return Err(io::ErrorKind::UnexpectedEof.into())
+                return Err(io::ErrorKind::UnexpectedEof.into());
             }
             read += size;
         }
@@ -291,7 +291,7 @@ trait WriteExt: AsyncWriteExt + Unpin {
         while written != 2 {
             let size = self.write(&buf[written..]).await?;
             if size == 0 {
-                return Err(io::ErrorKind::WriteZero.into())
+                return Err(io::ErrorKind::WriteZero.into());
             }
             written += size;
         }
@@ -778,10 +778,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "tokio")]
-    use tokio::net::TcpStream;
     #[cfg(feature = "async-std")]
     use async_std::net::TcpStream;
+    #[cfg(feature = "tokio")]
+    use tokio::net::TcpStream;
 
     const PROXY_ADDR: &str = "127.0.0.1:1080";
     const PROXY_AUTH_ADDR: &str = "127.0.0.1:1081";

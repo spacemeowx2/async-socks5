@@ -846,6 +846,7 @@ mod tests {
 
         let server_addr: SocketAddr = "127.0.0.1:23456".parse().unwrap();
         let mut server = UdpSocket::bind(server_addr).await.unwrap();
+        server = server;
         let server_addr = AddrKind::Ip(server_addr);
 
         let mut buf = vec![0; DATA.len()];
